@@ -1,0 +1,95 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>3D Quiz Demo</title>
+  <style>body{margin:0;overflow:hidden} #ui{position:fixed;left:10px;top:10px;z-index:10;color:white}</style>
+</head>
+<body>
+  <div id="ui">
+    <div>
+      Name: <input id="name" value="PlayerA" />
+      <button id="create">Create Room</button>
+      <input id="roomId" placeholder="Room ID" />
+      <button id="join">Join Room</button>
+      <button id="start">Start Game</button>
+    </div>
+    <div id="status"></div>
+    <div id="players"></div>
+  </div>
+  <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+  <script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
+  <script>
+    const socket = io('http://localhost:4000');
+    const status = document.getElementById('status');
+    const playersDiv = document.getElementById('players');
+
+    document.getElementById('create').onclick = () => {
+      socket.emit('create_room', { name: document.getElementById('name').value }, (res) => {
+        if (res.ok) {
+          status.innerText = 'Created: ' + res.roomId;
+          document.getElementById('roomId').value = res.roomId;
+        }
+      });
+    };
+
+    document.getElementById('join').onclick = () => {
+      socket.emit('join_room', { roomId: document.getElementById('roomId').value, name: document.getElementById('name').value }, (res) => {
+        if (res.ok) {
+          status.innerText = 'Joined room ' + res.room.roomId;
+        } else {
+          status.innerText = 'Failed: ' + (res.error || 'error');
+        }
+      });
+    };
+
+    document.getElementById('start').onclick = () => {
+      socket.emit('start_game', { roomId: document.getElementById('roomId').value }, (res) => {
+        status.innerText = JSON.stringify(res);
+      });
+    };
+
+    socket.on('room_update', (room) => {
+      playersDiv.innerHTML = '<b>Players</b><br>' + room.players.map(p => p.name + ' (' + p.score + ')').join('<br>');
+    });
+
+    socket.on('question_start', ({ question }) => {
+      status.innerText = 'Question: ' + question.text + ' — Choices: ' + question.choices.join(', ');
+      // auto-answer random after 1-3s (for demo)
+      setTimeout(() => {
+        const choice = Math.floor(Math.random() * question.choices.length);
+        socket.emit('answer', { roomId: document.getElementById('roomId').value, questionId: question.id, choiceIndex: choice });
+      }, 1000 + Math.random() * 2000);
+    });
+
+    socket.on('question_end', ({ questionId, correctIndex }) => {
+      status.innerText = 'Question ended. Correct: ' + correctIndex;
+    });
+
+    socket.on('score_update', ({ players }) => {
+      playersDiv.innerHTML = '<b>Players</b><br>' + players.map(p => p.name + ' (' + p.score + ')').join('<br>');
+    });
+
+    // Minimal Three.js scene (placeholder for avatars)
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(75, innerWidth / innerHeight, 0.1, 1000);
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(innerWidth, innerHeight);
+    document.body.appendChild(renderer.domElement);
+    window.addEventListener('resize', () => { camera.aspect = innerWidth/innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); });
+
+    const geometry = new THREE.BoxGeometry();
+    const material = new THREE.MeshNormalMaterial();
+    const cube = new THREE.Mesh(geometry, material);
+    scene.add(cube);
+    camera.position.z = 5;
+    function animate() {
+      requestAnimationFrame(animate);
+      cube.rotation.x += 0.01;
+      cube.rotation.y += 0.01;
+      renderer.render(scene, camera);
+    }
+    animate();
+  </script>
+</body>
+</html>
